@@ -29,6 +29,8 @@ export default async function handler(req, res) {
     style = 'jdenticon',
     seed  = 'hello',
     size  = '256',
+    shape = 'circle',   // 'circle' | 'square'
+    bg    = 'white',    // 'white' | 'black' | 'transparent'
     preset, hueShift, saturation, lightness,
   } = req.query;
 
@@ -51,13 +53,13 @@ export default async function handler(req, res) {
         svgEl.setAttribute('height', sz);
         let svg = svgEl.outerHTML;
         svg = remapSvgColors(svg, colors);
-        return sendSvg(res, svg);
+        return sendSvg(res, svg, sz, shape, bg);
       }
 
       case 'jdenticon': {
         let svg = jdenticonToSvg(seed, sz);
         svg = remapSvgColors(svg, colors);
-        return sendSvg(res, svg);
+        return sendSvg(res, svg, sz, shape, bg);
       }
 
       case 'blockies': {
@@ -74,7 +76,7 @@ export default async function handler(req, res) {
         }
         let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${sz}" height="${sz}">${rects.join('')}</svg>`;
         svg = remapSvgColors(svg, colors);
-        return sendSvg(res, svg);
+        return sendSvg(res, svg, sz, shape, bg);
       }
 
       case 'jazzicon': {
@@ -88,7 +90,7 @@ export default async function handler(req, res) {
         const bg = el.style.background || '#ccc';
         let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${sz}" height="${sz}"><circle cx="${sz/2}" cy="${sz/2}" r="${sz/2}" fill="${bg}"/><g clip-path="url(#jc)"><clipPath id="jc"><circle cx="${sz/2}" cy="${sz/2}" r="${sz/2}"/></clipPath>${svgEl.innerHTML}</g></svg>`;
         svg = remapSvgColors(svg, colors);
-        return sendSvg(res, svg);
+        return sendSvg(res, svg, sz, shape, bg);
       }
 
       case 'github': {
@@ -96,21 +98,21 @@ export default async function handler(req, res) {
         const data = new Identicon(hash, { size: sz, format: 'svg', margin: 0.1 }).toString();
         let svg = Buffer.from(data, 'base64').toString('utf-8');
         svg = remapSvgColors(svg, colors);
-        return sendSvg(res, svg);
+        return sendSvg(res, svg, sz, shape, bg);
       }
 
       case 'hashicon': {
         const hash = createHash('sha256').update(seed).digest('hex');
         let svg = buildHashicon(hash, sz);
         svg = remapSvgColors(svg, colors);
-        return sendSvg(res, svg);
+        return sendSvg(res, svg, sz, shape, bg);
       }
 
       case 'solacon': {
         const hash = createHash('sha256').update(seed).digest('hex');
         let svg = buildSolacon(hash, sz);
         svg = remapSvgColors(svg, colors);
-        return sendSvg(res, svg);
+        return sendSvg(res, svg, sz, shape, bg);
       }
 
       case 'hexicon': {
@@ -119,42 +121,42 @@ export default async function handler(req, res) {
         const h = new Hexicon({ type: 'hexagon', random: seed, size: sz });
         let svg = h.toSVG();
         svg = remapSvgColors(svg, colors);
-        return sendSvg(res, svg);
+        return sendSvg(res, svg, sz, shape, bg);
       }
 
       case 'gradient': {
         const hash = createHash('sha256').update(seed).digest('hex');
         let svg = buildGradientAvatar(hash, sz);
         svg = remapSvgColors(svg, colors);
-        return sendSvg(res, svg);
+        return sendSvg(res, svg, sz, shape, bg);
       }
 
       case 'identiheart': {
         const hash = createHash('sha256').update(seed).digest('hex');
         let svg = buildIdentiHeart(hash, sz);
         svg = remapSvgColors(svg, colors);
-        return sendSvg(res, svg);
+        return sendSvg(res, svg, sz, shape, bg);
       }
 
       case 'florash': {
         const hash = createHash('sha256').update(seed).digest('hex');
         let svg = buildFlorash(hash, sz);
         svg = remapSvgColors(svg, colors);
-        return sendSvg(res, svg);
+        return sendSvg(res, svg, sz, shape, bg);
       }
 
       case 'letter': {
         const hash = createHash('md5').update(seed).digest('hex');
         let svg = buildLetterAvatar(seed, hash, sz);
         svg = remapSvgColors(svg, colors);
-        return sendSvg(res, svg);
+        return sendSvg(res, svg, sz, shape, bg);
       }
 
       case 'bubble': {
         const hash = createHash('sha256').update(seed).digest('hex');
         let svg = buildBubble(hash, sz);
         svg = remapSvgColors(svg, colors);
-        return sendSvg(res, svg);
+        return sendSvg(res, svg, sz, shape, bg);
       }
 
       case 'lifehash': {
@@ -173,14 +175,14 @@ export default async function handler(req, res) {
         }
         let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${sz}" height="${sz}">${rects.join('')}</svg>`;
         svg = remapSvgColors(svg, colors);
-        return sendSvg(res, svg);
+        return sendSvg(res, svg, sz, shape, bg);
       }
 
       case 'pictogrify': {
         const hash = createHash('sha256').update(seed).digest('hex');
         let svg = buildPictogrify(hash, sz);
         svg = remapSvgColors(svg, colors);
-        return sendSvg(res, svg);
+        return sendSvg(res, svg, sz, shape, bg);
       }
 
       // ── PNG styles (proxy) ───────────────────────────────────────────────
@@ -214,10 +216,30 @@ export default async function handler(req, res) {
 
 // ─── Response helpers ────────────────────────────────────────────────────────
 
-function sendSvg(res, svg) {
+function sendSvg(res, svg, sz, shape, bg) {
+  // Strip the outer <svg> wrapper so we can re-wrap with our own
+  const inner = svg.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');
+
+  const bgColor = bg === 'black' ? '#000000' : bg === 'white' ? '#ffffff' : null;
+  const isCircle = shape === 'circle';
+  const r = sz / 2;
+
+  let bgRect = bgColor
+    ? `<rect width="${sz}" height="${sz}" fill="${bgColor}" ${isCircle ? `rx="${r}" ry="${r}"` : ''}/>`
+    : '';
+
+  let content;
+  if (isCircle) {
+    content = `<defs><clipPath id="clip"><circle cx="${r}" cy="${r}" r="${r}"/></clipPath></defs>${bgRect}<g clip-path="url(#clip)">${inner}</g>`;
+  } else {
+    content = `${bgRect}${inner}`;
+  }
+
+  const out = `<svg xmlns="http://www.w3.org/2000/svg" width="${sz}" height="${sz}" viewBox="0 0 ${sz} ${sz}">${content}</svg>`;
+
   res.setHeader('Content-Type', 'image/svg+xml');
   res.setHeader('Cache-Control', 'public, max-age=86400');
-  return res.status(200).send(svg);
+  return res.status(200).send(out);
 }
 
 async function proxyPng(res, url) {
