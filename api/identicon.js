@@ -207,9 +207,9 @@ export default async function handler(req, res) {
       }
 
       case 'gradletter': {
-        let svg = buildGradLetter(seed, sz);
-        svg = remapSvgColors(svg, colors);
-        return sendSvg(res, svg, sz, shape, bg);
+        const { createCanvas } = await import('canvas');
+        const canvas = buildGradLetterCanvas(seed, sz, shape, bg, colors, createCanvas);
+        return sendPng(res, canvas.toBuffer('image/png'));
       }
 
       default:
@@ -445,56 +445,68 @@ function buildPictogrify(hash, size) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><rect width="${size}" height="${size}" fill="${bg}"/>${top}<circle cx="${cx}" cy="${cy}" r="${faceR}" fill="${skin}"/>${lEye}${rEye}${mouth}</svg>`;
 }
 
-// ─── Gradient Letter Avatar ───────────────────────────────────────────────────
+// ─── Gradient Letter Avatar (canvas → PNG) ────────────────────────────────────
 
-function buildGradLetter(seed, size) {
+function buildGradLetterCanvas(seed, size, shape, bg, colors, createCanvas) {
   const hash  = createHash('sha256').update(seed).digest('hex');
   const bytes = hash.match(/.{2}/g).map(h => parseInt(h, 16));
 
-  // Two vivid hues for gradient
-  const h1  = (bytes[0] * 360 / 255).toFixed(1);
-  const h2  = ((bytes[0] * 360 / 255 + 120 + bytes[1] * 60 / 255) % 360).toFixed(1);
-  const sat = (65 + bytes[3] * 25 / 255).toFixed(1);
+  // Two vivid hues
+  let h1  = bytes[0] * 360 / 255;
+  let h2  = (h1 + 120 + bytes[1] * 60 / 255) % 360;
+  let sat = 65 + bytes[3] * 25 / 255;
 
-  // Gradient: direct pixel coords so no gradientTransform needed
+  // Apply color remapping
+  if (colors.hueShift) { h1 = (h1 + colors.hueShift) % 360; h2 = (h2 + colors.hueShift) % 360; }
+  if (colors.saturation) sat = Math.max(0, Math.min(100, sat + colors.saturation));
+
   const angle = bytes[4] * 360 / 255;
   const rad   = angle * Math.PI / 180;
-  const cx    = size / 2;
-  const cy    = size / 2;
-  const x1    = (cx - Math.cos(rad) * cx).toFixed(1);
-  const y1    = (cy - Math.sin(rad) * cy).toFixed(1);
-  const x2    = (cx + Math.cos(rad) * cx).toFixed(1);
-  const y2    = (cy + Math.sin(rad) * cy).toFixed(1);
+  const half  = size / 2;
 
-  const c1 = `hsl(${h1},${sat}%,55%)`;
-  const c2 = `hsl(${h2},${sat}%,45%)`;
+  const canvas = createCanvas(size, size);
+  const ctx    = canvas.getContext('2d');
 
-  // Initials: up to 2 chars from seed
+  // Background fill
+  if (bg === 'white') { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, size, size); }
+  else if (bg === 'black') { ctx.fillStyle = '#000000'; ctx.fillRect(0, 0, size, size); }
+
+  // Circle clip
+  if (shape === 'circle') {
+    ctx.beginPath();
+    ctx.arc(half, half, half, 0, Math.PI * 2);
+    ctx.clip();
+  }
+
+  // Gradient background
+  const gx1 = half - Math.cos(rad) * half;
+  const gy1 = half - Math.sin(rad) * half;
+  const gx2 = half + Math.cos(rad) * half;
+  const gy2 = half + Math.sin(rad) * half;
+  const grad = ctx.createLinearGradient(gx1, gy1, gx2, gy2);
+  grad.addColorStop(0, `hsl(${h1.toFixed(1)},${sat.toFixed(1)}%,55%)`);
+  grad.addColorStop(1, `hsl(${h2.toFixed(1)},${sat.toFixed(1)}%,45%)`);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+
+  // Initials
   const clean   = seed.trim().replace(/[^a-zA-Z0-9]/g, ' ').trim();
   const parts   = clean.split(/\s+/).filter(Boolean);
   let letters   = parts.length >= 2 ? (parts[0][0] + parts[1][0]).toUpperCase() : clean.slice(0, 2).toUpperCase();
   if (!letters) letters = '?';
 
   const fontSize = Math.round(size * (letters.length === 1 ? 0.44 : 0.34));
-  // Unique gradient id to avoid collisions when multiple SVGs are in the same DOM
-  const uid = bytes[5].toString(16).padStart(2, '0');
+  ctx.font = `bold ${fontSize}px Arial`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
 
-  // Use dy="0.35em" instead of dominant-baseline (much better cross-renderer support)
-  // Two-pass text: dark offset copy as shadow, then white on top
-  const sdx = Math.round(size * 0.01);
-  const sdy = Math.round(size * 0.02);
+  // Drop shadow text pass
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.fillText(letters, half + size * 0.01, half + size * 0.02);
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">
-  <defs>
-    <linearGradient id="gl${uid}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" gradientUnits="userSpaceOnUse">
-      <stop offset="0%"   stop-color="${c1}"/>
-      <stop offset="100%" stop-color="${c2}"/>
-    </linearGradient>
-  </defs>
-  <rect width="${size}" height="${size}" fill="url(#gl${uid})"/>
-  <text x="${cx + sdx}" y="${cy + sdy}" font-family="Arial,Helvetica,sans-serif" font-size="${fontSize}" font-weight="bold"
-    fill="black" fill-opacity="0.3" text-anchor="middle" dy="0.35em">${letters}</text>
-  <text x="${cx}" y="${cy}" font-family="Arial,Helvetica,sans-serif" font-size="${fontSize}" font-weight="bold"
-    fill="white" text-anchor="middle" dy="0.35em">${letters}</text>
-</svg>`;
+  // Main white text
+  ctx.fillStyle = 'white';
+  ctx.fillText(letters, half, half);
+
+  return canvas;
 }
