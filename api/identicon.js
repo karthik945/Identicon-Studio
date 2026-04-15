@@ -14,9 +14,9 @@ import { createHash } from 'crypto';
 let _domReady = false;
 async function ensureDOM() {
   if (_domReady) return;
-  const { JSDOM } = await import('jsdom');
-  const { window: _win } = new JSDOM('');
-  global.document = _win.document;
+  const { parseHTML } = await import('linkedom');
+  const { document: _doc, window: _win } = parseHTML('');
+  global.document = _doc;
   global.window   = _win;
   global.self     = _win;
   _domReady = true;

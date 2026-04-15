@@ -14,7 +14,7 @@
     "hexicon": "^1.1.0",
     "identicon.js": "^2.3.3",
     "jdenticon": "^3.3.0",
-    "jsdom": "^29.0.2",
-    "lifehash": "^1.0.0"
+    "lifehash": "^1.0.0",
+    "linkedom": "^0.18.12"
   }
 }
