@@ -6,6 +6,7 @@
  */
 
 import { remapSvgColors } from '../lib/colorRemap.js';
+import { ROBOTO_BOLD_B64 } from '../lib/robotoFont.js';
 import { toSvg as jdenticonToSvg } from 'jdenticon';
 import Identicon from 'identicon.js';
 import { createHash } from 'crypto';
@@ -208,7 +209,7 @@ export default async function handler(req, res) {
 
       case 'gradletter': {
         const { createCanvas, GlobalFonts } = await import('@napi-rs/canvas');
-        await ensureGradLetterFont(GlobalFonts);
+        ensureGradLetterFont(GlobalFonts);
         const canvas = buildGradLetterCanvas(seed, sz, shape, bg, colors, createCanvas);
         return sendPng(res, await canvas.encode('png'));
       }
@@ -449,28 +450,10 @@ function buildPictogrify(hash, size) {
 // ─── Gradient Letter Avatar (canvas → PNG) ────────────────────────────────────
 
 let _gradFontReady = false;
-async function ensureGradLetterFont(GlobalFonts) {
+function ensureGradLetterFont(GlobalFonts) {
   if (_gradFontReady) return;
-  try {
-    const { fileURLToPath } = await import('url');
-    const { dirname, join } = await import('path');
-    const { existsSync } = await import('fs');
-    const __dir = dirname(fileURLToPath(import.meta.url));
-    const candidates = [
-      join(__dir, '../fonts/Roboto-Bold.ttf'),
-      join(process.cwd(), 'fonts/Roboto-Bold.ttf'),
-      '/var/task/fonts/Roboto-Bold.ttf',
-    ];
-    for (const p of candidates) {
-      if (existsSync(p)) {
-        GlobalFonts.registerFromPath(p, 'RobotoGL');
-        break;
-      }
-    }
-  } catch (e) {
-    console.warn('[gradletter] font registration failed:', e.message);
-  }
   _gradFontReady = true;
+  GlobalFonts.register(Buffer.from(ROBOTO_BOLD_B64, 'base64'), 'RobotoGL');
 }
 
 function buildGradLetterCanvas(seed, size, shape, bg, colors, createCanvas) {
