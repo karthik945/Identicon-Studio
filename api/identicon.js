@@ -6,16 +6,15 @@
  */
 
 import { remapSvgColors } from '../lib/colorRemap.js';
-import { beachballIcon } from '@polkadot/ui-shared';
 import { toSvg as jdenticonToSvg } from 'jdenticon';
 import Identicon from 'identicon.js';
 import { createHash } from 'crypto';
-import { JSDOM } from 'jsdom';
 
-// Lazy DOM setup — only created once on first request that needs it
+// Lazy DOM setup — jsdom dynamically imported so it never crashes on module load
 let _domReady = false;
-function ensureDOM() {
+async function ensureDOM() {
   if (_domReady) return;
+  const { JSDOM } = await import('jsdom');
   const { window: _win } = new JSDOM('');
   global.document = _win.document;
   global.window   = _win;
@@ -42,7 +41,8 @@ export default async function handler(req, res) {
       // ── SVG styles ──────────────────────────────────────────────────────
 
       case 'beachball': {
-        ensureDOM();
+        await ensureDOM();
+        const { beachballIcon } = await import('@polkadot/ui-shared');
         const pkHex = '0x' + createHash('sha256').update(seed).digest('hex');
         const div = beachballIcon(pkHex, { isAlternative: false });
         const svgEl = div.querySelector('svg');
@@ -78,7 +78,7 @@ export default async function handler(req, res) {
       }
 
       case 'jazzicon': {
-        ensureDOM();
+        await ensureDOM();
         const { default: jazzicon } = await import('@metamask/jazzicon');
         const seedNum = parseInt(createHash('md5').update(seed).digest('hex').slice(0, 8), 16);
         const el = jazzicon(sz, seedNum);
@@ -114,7 +114,7 @@ export default async function handler(req, res) {
       }
 
       case 'hexicon': {
-        ensureDOM();
+        await ensureDOM();
         const { default: Hexicon } = await import('hexicon');
         const h = new Hexicon({ type: 'hexagon', random: seed, size: sz });
         let svg = h.toSVG();
