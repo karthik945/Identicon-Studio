@@ -12,9 +12,16 @@ import Identicon from 'identicon.js';
 import { createHash } from 'crypto';
 import { JSDOM } from 'jsdom';
 
-// Provide DOM environment once for packages that need it
-const { window: _window } = new JSDOM('');
-global.document = _window.document;
+// Lazy DOM setup — only created once on first request that needs it
+let _domReady = false;
+function ensureDOM() {
+  if (_domReady) return;
+  const { window: _win } = new JSDOM('');
+  global.document = _win.document;
+  global.window   = _win;
+  global.self     = _win;
+  _domReady = true;
+}
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -35,10 +42,9 @@ export default async function handler(req, res) {
       // ── SVG styles ──────────────────────────────────────────────────────
 
       case 'beachball': {
-        // beachballIcon needs a valid 32-byte hex public key for colors.
+        ensureDOM();
         const pkHex = '0x' + createHash('sha256').update(seed).digest('hex');
         const div = beachballIcon(pkHex, { isAlternative: false });
-        // Extract the SVG element nested inside div > div > svg
         const svgEl = div.querySelector('svg');
         svgEl.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
         svgEl.setAttribute('width', sz);
@@ -72,8 +78,15 @@ export default async function handler(req, res) {
       }
 
       case 'jazzicon': {
-        const numericSeed = stringToSeed(seed);
-        let svg = generateJazzicon(numericSeed, sz);
+        ensureDOM();
+        const { default: jazzicon } = await import('@metamask/jazzicon');
+        const seedNum = parseInt(createHash('md5').update(seed).digest('hex').slice(0, 8), 16);
+        const el = jazzicon(sz, seedNum);
+        const svgEl = el.querySelector('svg');
+        svgEl.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        // wrap in a circle-clipped container matching the outer div background
+        const bg = el.style.background || '#ccc';
+        let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${sz}" height="${sz}"><circle cx="${sz/2}" cy="${sz/2}" r="${sz/2}" fill="${bg}"/><g clip-path="url(#jc)"><clipPath id="jc"><circle cx="${sz/2}" cy="${sz/2}" r="${sz/2}"/></clipPath>${svgEl.innerHTML}</g></svg>`;
         svg = remapSvgColors(svg, colors);
         return sendSvg(res, svg);
       }
@@ -101,8 +114,10 @@ export default async function handler(req, res) {
       }
 
       case 'hexicon': {
-        const hash = createHash('sha256').update(seed).digest('hex');
-        let svg = buildHexicon(hash, sz);
+        ensureDOM();
+        const { default: Hexicon } = await import('hexicon');
+        const h = new Hexicon({ type: 'hexagon', random: seed, size: sz });
+        let svg = h.toSVG();
         svg = remapSvgColors(svg, colors);
         return sendSvg(res, svg);
       }
@@ -143,8 +158,20 @@ export default async function handler(req, res) {
       }
 
       case 'lifehash': {
-        const hash = createHash('sha256').update(seed).digest('hex');
-        let svg = buildLifeHash(hash, sz);
+        const { LifeHash } = await import('lifehash');
+        const img = LifeHash.makeFrom(seed);
+        // img.colors is a flat Uint8Array of RGBA pixels, img.width x img.height
+        const w = img.width, h = img.height;
+        const scale = Math.floor(sz / w) || 1;
+        const rects = [];
+        for (let row = 0; row < h; row++) {
+          for (let col = 0; col < w; col++) {
+            const i = (row * w + col) * 4;
+            const r = img.colors[i], g = img.colors[i+1], b = img.colors[i+2];
+            rects.push(`<rect x="${col*scale}" y="${row*scale}" width="${scale}" height="${scale}" fill="rgb(${r},${g},${b})"/>`);
+          }
+        }
+        let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${sz}" height="${sz}">${rects.join('')}</svg>`;
         svg = remapSvgColors(svg, colors);
         return sendSvg(res, svg);
       }
@@ -242,48 +269,6 @@ function buildRng(seed) {
   };
 }
 
-// ─── Jazzicon ────────────────────────────────────────────────────────────────
-
-const JAZZ_COLORS = ['#01888C','#FC7500','#034F5D','#F73F01','#FC1960','#C7144C','#F3C100','#1598F2','#2465E1','#F19E02'];
-
-function stringToSeed(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) { hash = str.charCodeAt(i) + ((hash << 5) - hash); hash |= 0; }
-  return Math.abs(hash);
-}
-
-function generateJazzicon(seed, size) {
-  const rng = mulberry32(seed);
-  const colors = [...JAZZ_COLORS].sort(() => rng() - 0.5);
-  const half = size / 2;
-  const shapes = [];
-  for (let i = 0; i < 4; i++) {
-    const fill = colors[i % colors.length];
-    const type = Math.floor(rng() * 3);
-    const center = size / 2;
-    if (type === 0) {
-      const x = (rng()-0.5)*size, y = (rng()-0.5)*size;
-      const w = size*(0.3+rng()*0.4), h = size*(0.3+rng()*0.4);
-      shapes.push(`<rect x="${(center+x-w/2).toFixed(1)}" y="${(center+y-h/2).toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="${fill}"/>`);
-    } else if (type === 1) {
-      const cx=(rng()-0.5)*size+center, cy=(rng()-0.5)*size+center, r=size*(0.15+rng()*0.25);
-      shapes.push(`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" fill="${fill}"/>`);
-    } else {
-      const pts = Array.from({length:3},()=>`${((rng()-0.5)*size+center).toFixed(1)},${((rng()-0.5)*size+center).toFixed(1)}`).join(' ');
-      shapes.push(`<polygon points="${pts}" fill="${fill}"/>`);
-    }
-  }
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><rect width="${size}" height="${size}" fill="${colors[4]}"/><clipPath id="c"><circle cx="${half}" cy="${half}" r="${half}"/></clipPath><g clip-path="url(#c)">${shapes.join('')}</g></svg>`;
-}
-
-function mulberry32(a) {
-  return function() {
-    a |= 0; a = a + 0x6D2B79F5 | 0;
-    let t = Math.imul(a ^ a>>>15, 1|a);
-    t = t + Math.imul(t ^ t>>>7, 61|t) ^ t;
-    return ((t ^ t>>>14) >>> 0) / 4294967296;
-  };
-}
 
 // ─── Hashicon ────────────────────────────────────────────────────────────────
 
@@ -329,42 +314,6 @@ function polygon(cx, cy, r, sides, rotDeg) {
   }).join(' ');
 }
 
-// ─── Hexicon ─────────────────────────────────────────────────────────────────
-
-function buildHexicon(hash, size) {
-  const bytes = hash.match(/.{2}/g).map(h => parseInt(h, 16));
-  const baseHue = bytes[0]*360/255, sat = 50+bytes[1]*50/255;
-  const cx = size/2, cy = size/2, hexR = size/8;
-  const positions = hexRingPositions(cx, cy, hexR);
-  const hexes = positions.map((pos,i)=>{
-    const byte = bytes[(i+2)%bytes.length];
-    const hue = (baseHue+(byte/255)*60)%360;
-    const l = 35+(byte/255)*30;
-    const fill = byte>80 ? `hsl(${hue.toFixed(1)},${sat.toFixed(1)}%,${l.toFixed(1)}%)` : `hsl(${hue.toFixed(1)},20%,85%)`;
-    return hexPath(pos.x, pos.y, hexR*0.92, fill);
-  });
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><rect width="${size}" height="${size}" fill="hsl(${baseHue.toFixed(1)},${sat.toFixed(1)}%,95%)"/>${hexes.join('')}</svg>`;
-}
-
-function hexRingPositions(cx, cy, r) {
-  const pos = [{x:cx,y:cy}], sp = r*1.75;
-  const dirs = [[1,0],[0.5,0.866],[-0.5,0.866],[-1,0],[-0.5,-0.866],[0.5,-0.866]];
-  for (let d=0;d<6;d++) pos.push({x:cx+dirs[d][0]*sp,y:cy+dirs[d][1]*sp});
-  for (let d=0;d<6;d++) {
-    pos.push({x:cx+dirs[d][0]*sp*2,y:cy+dirs[d][1]*sp*2});
-    const n=dirs[(d+2)%6];
-    pos.push({x:cx+dirs[d][0]*sp*2+n[0]*sp,y:cy+dirs[d][1]*sp*2+n[1]*sp});
-  }
-  return pos;
-}
-
-function hexPath(cx, cy, r, fill) {
-  const pts = Array.from({length:6},(_,i)=>{
-    const a=(Math.PI/3)*i-Math.PI/6;
-    return `${(cx+r*Math.cos(a)).toFixed(2)},${(cy+r*Math.sin(a)).toFixed(2)}`;
-  }).join(' ');
-  return `<polygon points="${pts}" fill="${fill}"/>`;
-}
 
 // ─── Gradient Avatar ─────────────────────────────────────────────────────────
 
@@ -444,38 +393,6 @@ function buildBubble(hash, size) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><rect width="${size}" height="${size}" fill="hsl(${baseHue.toFixed(1)},${sat.toFixed(1)}%,92%)"/>${circles.join('')}</svg>`;
 }
 
-// ─── LifeHash ─────────────────────────────────────────────────────────────────
-
-const GRID = 16;
-
-function buildLifeHash(hash, size) {
-  const bytes = hash.match(/.{2}/g).map(h => parseInt(h, 16));
-  const baseHue=bytes[0]*360/255, sat=55+bytes[1]*35/255;
-  let cells = Array.from({length:GRID*GRID},(_,i)=>(bytes[Math.floor(i/8)%bytes.length]>>(i%8))&1);
-  for (let g=0;g<5;g++) cells=lifeStep(cells);
-  const cell=size/GRID, rects=[];
-  for (let row=0;row<GRID;row++) for (let col=0;col<GRID;col++) {
-    if (cells[row*GRID+col]) {
-      const hue=(baseHue+(row*col/(GRID*GRID))*60)%360, l=35+((row+col)/(GRID*2))*25;
-      rects.push(`<rect x="${col*cell}" y="${row*cell}" width="${cell}" height="${cell}" fill="hsl(${hue.toFixed(1)},${sat.toFixed(1)}%,${l.toFixed(1)}%)"/>`);
-    }
-  }
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><rect width="${size}" height="${size}" fill="hsl(${baseHue.toFixed(1)},${(sat*0.3).toFixed(1)}%,92%)"/>${rects.join('')}</svg>`;
-}
-
-function lifeStep(cells) {
-  const next=new Array(GRID*GRID).fill(0);
-  for (let row=0;row<GRID;row++) for (let col=0;col<GRID;col++) {
-    let n=0;
-    for (let dr=-1;dr<=1;dr++) for (let dc=-1;dc<=1;dc++) {
-      if (dr===0&&dc===0) continue;
-      n+=cells[((row+dr+GRID)%GRID)*GRID+((col+dc+GRID)%GRID)];
-    }
-    const a=cells[row*GRID+col];
-    next[row*GRID+col]=a?(n===2||n===3?1:0):(n===3?1:0);
-  }
-  return next;
-}
 
 // ─── Pictogrify ──────────────────────────────────────────────────────────────
 

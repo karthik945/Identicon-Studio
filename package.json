@@ -7,9 +7,14 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@metamask/jazzicon": "^2.0.0",
     "@polkadot/ui-shared": "^3.6.0",
+    "ethereum-blockies": "^0.1.1",
+    "hashicon": "^0.3.0",
+    "hexicon": "^1.1.0",
     "identicon.js": "^2.3.3",
     "jdenticon": "^3.3.0",
-    "jsdom": "^29.0.2"
+    "jsdom": "^29.0.2",
+    "lifehash": "^1.0.0"
   }
 }
