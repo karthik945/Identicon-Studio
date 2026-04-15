@@ -451,61 +451,50 @@ function buildGradLetter(seed, size) {
   const hash  = createHash('sha256').update(seed).digest('hex');
   const bytes = hash.match(/.{2}/g).map(h => parseInt(h, 16));
 
-  // Three vivid hues spaced around the wheel
-  const h1 = (bytes[0] * 360 / 255).toFixed(1);
-  const h2 = ((bytes[0] * 360 / 255 + 100 + bytes[1] * 60 / 255) % 360).toFixed(1);
-  const h3 = ((bytes[0] * 360 / 255 + 200 + bytes[2] * 60 / 255) % 360).toFixed(1);
+  // Two vivid hues for gradient
+  const h1  = (bytes[0] * 360 / 255).toFixed(1);
+  const h2  = ((bytes[0] * 360 / 255 + 120 + bytes[1] * 60 / 255) % 360).toFixed(1);
   const sat = (65 + bytes[3] * 25 / 255).toFixed(1);
 
-  // Gradient angle from seed
-  const angle  = (bytes[4] * 360 / 255).toFixed(1);
-  const rad    = (+angle) * Math.PI / 180;
-  const x1     = (50 - Math.cos(rad) * 50).toFixed(1);
-  const y1     = (50 - Math.sin(rad) * 50).toFixed(1);
-  const x2     = (50 + Math.cos(rad) * 50).toFixed(1);
-  const y2     = (50 + Math.sin(rad) * 50).toFixed(1);
+  // Gradient: direct pixel coords so no gradientTransform needed
+  const angle = bytes[4] * 360 / 255;
+  const rad   = angle * Math.PI / 180;
+  const cx    = size / 2;
+  const cy    = size / 2;
+  const x1    = (cx - Math.cos(rad) * cx).toFixed(1);
+  const y1    = (cy - Math.sin(rad) * cy).toFixed(1);
+  const x2    = (cx + Math.cos(rad) * cx).toFixed(1);
+  const y2    = (cy + Math.sin(rad) * cy).toFixed(1);
 
   const c1 = `hsl(${h1},${sat}%,55%)`;
-  const c2 = `hsl(${h2},${sat}%,50%)`;
-  const c3 = `hsl(${h3},${sat}%,45%)`;
+  const c2 = `hsl(${h2},${sat}%,45%)`;
 
   // Initials: up to 2 chars from seed
-  const clean  = seed.trim().replace(/[^a-zA-Z0-9]/g, ' ').trim();
-  const parts  = clean.split(/\s+/).filter(Boolean);
-  let letters  = parts.length >= 2 ? (parts[0][0] + parts[1][0]).toUpperCase() : clean.slice(0, 2).toUpperCase();
+  const clean   = seed.trim().replace(/[^a-zA-Z0-9]/g, ' ').trim();
+  const parts   = clean.split(/\s+/).filter(Boolean);
+  let letters   = parts.length >= 2 ? (parts[0][0] + parts[1][0]).toUpperCase() : clean.slice(0, 2).toUpperCase();
   if (!letters) letters = '?';
 
-  const cx         = size / 2;
-  const cy         = size / 2;
-  const fontSize   = (size * (letters.length === 1 ? 0.44 : 0.34)).toFixed(1);
-  const shadowBlur = (size * 0.06).toFixed(1);
+  const fontSize = Math.round(size * (letters.length === 1 ? 0.44 : 0.34));
+  // Unique gradient id to avoid collisions when multiple SVGs are in the same DOM
+  const uid = bytes[5].toString(16).padStart(2, '0');
+
+  // Use dy="0.35em" instead of dominant-baseline (much better cross-renderer support)
+  // Two-pass text: dark offset copy as shadow, then white on top
+  const sdx = Math.round(size * 0.01);
+  const sdy = Math.round(size * 0.02);
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">
   <defs>
-    <linearGradient id="gl" x1="${x1}%" y1="${y1}%" x2="${x2}%" y2="${y2}%" gradientUnits="userSpaceOnUse"
-      gradientTransform="scale(${size / 100})">
+    <linearGradient id="gl${uid}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" gradientUnits="userSpaceOnUse">
       <stop offset="0%"   stop-color="${c1}"/>
-      <stop offset="50%"  stop-color="${c2}"/>
-      <stop offset="100%" stop-color="${c3}"/>
+      <stop offset="100%" stop-color="${c2}"/>
     </linearGradient>
-    <radialGradient id="vignette" cx="50%" cy="35%" r="60%">
-      <stop offset="0%"   stop-color="white" stop-opacity="0.18"/>
-      <stop offset="100%" stop-color="black" stop-opacity="0.22"/>
-    </radialGradient>
-    <filter id="shadow">
-      <feDropShadow dx="0" dy="${(size * 0.02).toFixed(1)}" stdDeviation="${shadowBlur}" flood-color="rgba(0,0,0,0.45)"/>
-    </filter>
   </defs>
-  <rect width="${size}" height="${size}" fill="url(#gl)"/>
-  <rect width="${size}" height="${size}" fill="url(#vignette)"/>
-  <text x="${cx}" y="${cy}"
-    font-family="'SF Pro Display','Helvetica Neue',Arial,sans-serif"
-    font-size="${fontSize}"
-    font-weight="800"
-    fill="rgba(255,255,255,0.95)"
-    text-anchor="middle"
-    dominant-baseline="central"
-    filter="url(#shadow)"
-    letter-spacing="${(size * 0.015).toFixed(1)}">${letters}</text>
+  <rect width="${size}" height="${size}" fill="url(#gl${uid})"/>
+  <text x="${cx + sdx}" y="${cy + sdy}" font-family="Arial,Helvetica,sans-serif" font-size="${fontSize}" font-weight="bold"
+    fill="black" fill-opacity="0.3" text-anchor="middle" dy="0.35em">${letters}</text>
+  <text x="${cx}" y="${cy}" font-family="Arial,Helvetica,sans-serif" font-size="${fontSize}" font-weight="bold"
+    fill="white" text-anchor="middle" dy="0.35em">${letters}</text>
 </svg>`;
 }
