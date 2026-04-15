@@ -207,7 +207,8 @@ export default async function handler(req, res) {
       }
 
       case 'gradletter': {
-        const { createCanvas } = await import('canvas');
+        const { createCanvas, registerFont } = await import('canvas');
+        await ensureGradLetterFont(registerFont);
         const canvas = buildGradLetterCanvas(seed, sz, shape, bg, colors, createCanvas);
         return sendPng(res, canvas.toBuffer('image/png'));
       }
@@ -447,6 +448,31 @@ function buildPictogrify(hash, size) {
 
 // ─── Gradient Letter Avatar (canvas → PNG) ────────────────────────────────────
 
+let _gradFontReady = false;
+async function ensureGradLetterFont(registerFont) {
+  if (_gradFontReady) return;
+  try {
+    const { fileURLToPath } = await import('url');
+    const { dirname, join } = await import('path');
+    const { existsSync } = await import('fs');
+    const __dir = dirname(fileURLToPath(import.meta.url));
+    const candidates = [
+      join(__dir, '../fonts/Roboto-Bold.ttf'),
+      join(process.cwd(), 'fonts/Roboto-Bold.ttf'),
+      '/var/task/fonts/Roboto-Bold.ttf',
+    ];
+    for (const p of candidates) {
+      if (existsSync(p)) {
+        registerFont(p, { family: 'RobotoGL' });
+        break;
+      }
+    }
+  } catch (e) {
+    console.warn('[gradletter] font registration failed:', e.message);
+  }
+  _gradFontReady = true;
+}
+
 function buildGradLetterCanvas(seed, size, shape, bg, colors, createCanvas) {
   const hash  = createHash('sha256').update(seed).digest('hex');
   const bytes = hash.match(/.{2}/g).map(h => parseInt(h, 16));
@@ -496,7 +522,7 @@ function buildGradLetterCanvas(seed, size, shape, bg, colors, createCanvas) {
   if (!letters) letters = '?';
 
   const fontSize = Math.round(size * (letters.length === 1 ? 0.44 : 0.34));
-  ctx.font = `bold ${fontSize}px Arial`;
+  ctx.font = `bold ${fontSize}px RobotoGL, Arial, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
