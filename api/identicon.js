@@ -30,7 +30,10 @@ export default async function handler(req, res) {
       // ── SVG styles ──────────────────────────────────────────────────────
 
       case 'beachball': {
-        const circles = polkadotIcon(seed, { isAlternative: false });
+        // polkadotIcon needs a valid 32-byte hex public key to generate colors.
+        // Hash arbitrary seed to 0x-prefixed SHA256 hex so any string works.
+        const pkHex = '0x' + createHash('sha256').update(seed).digest('hex');
+        const circles = polkadotIcon(pkHex, { isAlternative: false });
         const parts = circles.map(({ cx, cy, fill, r }) =>
           `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}" />`
         ).join('');
