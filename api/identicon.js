@@ -102,10 +102,11 @@ export default async function handler(req, res) {
       }
 
       case 'hashicon': {
-        const hash = createHash('sha256').update(seed).digest('hex');
-        let svg = buildHashicon(hash, sz);
-        svg = remapSvgColors(svg, colors);
-        return sendSvg(res, svg, sz, shape, bg);
+        const { createCanvas } = await import('canvas');
+        const hashicon = (await import('hashicon')).default;
+        const canvas = hashicon(seed, { size: sz, createCanvas });
+        const buffer = canvas.toBuffer('image/png');
+        return sendPng(res, buffer);
       }
 
       case 'solacon': {
@@ -205,8 +206,14 @@ export default async function handler(req, res) {
         return proxyPng(res, url);
       }
 
+      case 'gradletter': {
+        let svg = buildGradLetter(seed, sz);
+        svg = remapSvgColors(svg, colors);
+        return sendSvg(res, svg, sz, shape, bg);
+      }
+
       default:
-        return res.status(400).json({ error: `Unknown style: "${style}". Valid styles: beachball, jdenticon, blockies, jazzicon, github, hashicon, solacon, hexicon, gradient, identiheart, florash, letter, bubble, lifehash, pictogrify, robohash, monsterid, wavatars` });
+        return res.status(400).json({ error: `Unknown style: "${style}". Valid styles: beachball, jdenticon, blockies, jazzicon, github, hashicon, solacon, hexicon, gradient, identiheart, florash, letter, bubble, lifehash, pictogrify, gradletter, robohash, monsterid, wavatars` });
     }
   } catch (err) {
     console.error(`[identicon] style=${style} seed=${seed}`, err);
@@ -240,6 +247,12 @@ function sendSvg(res, svg, sz, shape, bg) {
   res.setHeader('Content-Type', 'image/svg+xml');
   res.setHeader('Cache-Control', 'public, max-age=86400');
   return res.status(200).send(out);
+}
+
+function sendPng(res, buffer) {
+  res.setHeader('Content-Type', 'image/png');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  return res.status(200).send(buffer);
 }
 
 async function proxyPng(res, url) {
@@ -291,25 +304,6 @@ function buildRng(seed) {
   };
 }
 
-
-// ─── Hashicon ────────────────────────────────────────────────────────────────
-
-function buildHashicon(hash, size) {
-  const bytes = hash.match(/.{2}/g).map(h => parseInt(h, 16));
-  const hue = (bytes[0]*360/255).toFixed(1), sat = (40+bytes[1]*60/255).toFixed(1);
-  const bg = `hsl(${hue},${sat}%,${(80+bytes[2]*15/255).toFixed(1)}%)`;
-  const fg = `hsl(${hue},${sat}%,${(20+bytes[3]*30/255).toFixed(1)}%)`;
-  const grid = []; let bi = 4;
-  for (let row = 0; row < 5; row++) for (let col = 0; col < 3; col++) {
-    grid[row*5+col] = (bytes[bi++]&1)===1;
-    grid[row*5+(4-col)] = grid[row*5+col];
-  }
-  const cell = size/5;
-  const rects = [];
-  for (let row = 0; row < 5; row++) for (let col = 0; col < 5; col++)
-    if (grid[row*5+col]) rects.push(`<rect x="${col*cell}" y="${row*cell}" width="${cell}" height="${cell}" fill="${fg}"/>`);
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><rect width="${size}" height="${size}" fill="${bg}"/>${rects.join('')}</svg>`;
-}
 
 // ─── Solacon ─────────────────────────────────────────────────────────────────
 
@@ -449,4 +443,69 @@ function buildPictogrify(hash, size) {
   if (feat===0) top=`<ellipse cx="${cx}" cy="${(cy-faceR*0.92).toFixed(1)}" rx="${(faceR*0.85).toFixed(1)}" ry="${(faceR*0.35).toFixed(1)}" fill="${accent}"/>`;
   else if (feat===1) top=`<rect x="${(cx-faceR*0.55).toFixed(1)}" y="${(cy-faceR*1.25).toFixed(1)}" width="${(faceR*1.1).toFixed(1)}" height="${(faceR*0.5).toFixed(1)}" fill="${accent}" rx="${(faceR*0.1).toFixed(1)}"/>`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><rect width="${size}" height="${size}" fill="${bg}"/>${top}<circle cx="${cx}" cy="${cy}" r="${faceR}" fill="${skin}"/>${lEye}${rEye}${mouth}</svg>`;
+}
+
+// ─── Gradient Letter Avatar ───────────────────────────────────────────────────
+
+function buildGradLetter(seed, size) {
+  const hash  = createHash('sha256').update(seed).digest('hex');
+  const bytes = hash.match(/.{2}/g).map(h => parseInt(h, 16));
+
+  // Three vivid hues spaced around the wheel
+  const h1 = (bytes[0] * 360 / 255).toFixed(1);
+  const h2 = ((bytes[0] * 360 / 255 + 100 + bytes[1] * 60 / 255) % 360).toFixed(1);
+  const h3 = ((bytes[0] * 360 / 255 + 200 + bytes[2] * 60 / 255) % 360).toFixed(1);
+  const sat = (65 + bytes[3] * 25 / 255).toFixed(1);
+
+  // Gradient angle from seed
+  const angle  = (bytes[4] * 360 / 255).toFixed(1);
+  const rad    = (+angle) * Math.PI / 180;
+  const x1     = (50 - Math.cos(rad) * 50).toFixed(1);
+  const y1     = (50 - Math.sin(rad) * 50).toFixed(1);
+  const x2     = (50 + Math.cos(rad) * 50).toFixed(1);
+  const y2     = (50 + Math.sin(rad) * 50).toFixed(1);
+
+  const c1 = `hsl(${h1},${sat}%,55%)`;
+  const c2 = `hsl(${h2},${sat}%,50%)`;
+  const c3 = `hsl(${h3},${sat}%,45%)`;
+
+  // Initials: up to 2 chars from seed
+  const clean  = seed.trim().replace(/[^a-zA-Z0-9]/g, ' ').trim();
+  const parts  = clean.split(/\s+/).filter(Boolean);
+  let letters  = parts.length >= 2 ? (parts[0][0] + parts[1][0]).toUpperCase() : clean.slice(0, 2).toUpperCase();
+  if (!letters) letters = '?';
+
+  const cx         = size / 2;
+  const cy         = size / 2;
+  const fontSize   = (size * (letters.length === 1 ? 0.44 : 0.34)).toFixed(1);
+  const shadowBlur = (size * 0.06).toFixed(1);
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">
+  <defs>
+    <linearGradient id="gl" x1="${x1}%" y1="${y1}%" x2="${x2}%" y2="${y2}%" gradientUnits="userSpaceOnUse"
+      gradientTransform="scale(${size / 100})">
+      <stop offset="0%"   stop-color="${c1}"/>
+      <stop offset="50%"  stop-color="${c2}"/>
+      <stop offset="100%" stop-color="${c3}"/>
+    </linearGradient>
+    <radialGradient id="vignette" cx="50%" cy="35%" r="60%">
+      <stop offset="0%"   stop-color="white" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="black" stop-opacity="0.22"/>
+    </radialGradient>
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="${(size * 0.02).toFixed(1)}" stdDeviation="${shadowBlur}" flood-color="rgba(0,0,0,0.45)"/>
+    </filter>
+  </defs>
+  <rect width="${size}" height="${size}" fill="url(#gl)"/>
+  <rect width="${size}" height="${size}" fill="url(#vignette)"/>
+  <text x="${cx}" y="${cy}"
+    font-family="'SF Pro Display','Helvetica Neue',Arial,sans-serif"
+    font-size="${fontSize}"
+    font-weight="800"
+    fill="rgba(255,255,255,0.95)"
+    text-anchor="middle"
+    dominant-baseline="central"
+    filter="url(#shadow)"
+    letter-spacing="${(size * 0.015).toFixed(1)}">${letters}</text>
+</svg>`;
 }
