@@ -6,10 +6,15 @@
  */
 
 import { remapSvgColors } from '../lib/colorRemap.js';
-import { polkadotIcon }   from '@polkadot/ui-shared';
+import { beachballIcon } from '@polkadot/ui-shared';
 import { toSvg as jdenticonToSvg } from 'jdenticon';
 import Identicon from 'identicon.js';
 import { createHash } from 'crypto';
+import { JSDOM } from 'jsdom';
+
+// Provide DOM environment once for packages that need it
+const { window: _window } = new JSDOM('');
+global.document = _window.document;
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -30,14 +35,15 @@ export default async function handler(req, res) {
       // ── SVG styles ──────────────────────────────────────────────────────
 
       case 'beachball': {
-        // polkadotIcon needs a valid 32-byte hex public key to generate colors.
-        // Hash arbitrary seed to 0x-prefixed SHA256 hex so any string works.
+        // beachballIcon needs a valid 32-byte hex public key for colors.
         const pkHex = '0x' + createHash('sha256').update(seed).digest('hex');
-        const circles = polkadotIcon(pkHex, { isAlternative: false });
-        const parts = circles.map(({ cx, cy, fill, r }) =>
-          `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}" />`
-        ).join('');
-        let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="${sz}" height="${sz}">${parts}</svg>`;
+        const div = beachballIcon(pkHex, { isAlternative: false });
+        // Extract the SVG element nested inside div > div > svg
+        const svgEl = div.querySelector('svg');
+        svgEl.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        svgEl.setAttribute('width', sz);
+        svgEl.setAttribute('height', sz);
+        let svg = svgEl.outerHTML;
         svg = remapSvgColors(svg, colors);
         return sendSvg(res, svg);
       }
