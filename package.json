@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@metamask/jazzicon": "^2.0.0",
+    "@napi-rs/canvas": "^0.1.97",
     "@polkadot/ui-shared": "^3.6.0",
     "canvas": "^3.2.3",
     "ethereum-blockies": "^0.1.1",

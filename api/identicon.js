@@ -102,10 +102,10 @@ export default async function handler(req, res) {
       }
 
       case 'hashicon': {
-        const { createCanvas } = await import('canvas');
+        const { createCanvas } = await import('@napi-rs/canvas');
         const hashicon = (await import('hashicon')).default;
         const canvas = hashicon(seed, { size: sz, createCanvas });
-        const buffer = canvas.toBuffer('image/png');
+        const buffer = await canvas.encode('png');
         return sendPng(res, buffer);
       }
 
@@ -207,10 +207,10 @@ export default async function handler(req, res) {
       }
 
       case 'gradletter': {
-        const { createCanvas, registerFont } = await import('canvas');
-        await ensureGradLetterFont(registerFont);
+        const { createCanvas, GlobalFonts } = await import('@napi-rs/canvas');
+        await ensureGradLetterFont(GlobalFonts);
         const canvas = buildGradLetterCanvas(seed, sz, shape, bg, colors, createCanvas);
-        return sendPng(res, canvas.toBuffer('image/png'));
+        return sendPng(res, await canvas.encode('png'));
       }
 
       default:
@@ -449,7 +449,7 @@ function buildPictogrify(hash, size) {
 // ─── Gradient Letter Avatar (canvas → PNG) ────────────────────────────────────
 
 let _gradFontReady = false;
-async function ensureGradLetterFont(registerFont) {
+async function ensureGradLetterFont(GlobalFonts) {
   if (_gradFontReady) return;
   try {
     const { fileURLToPath } = await import('url');
@@ -463,7 +463,7 @@ async function ensureGradLetterFont(registerFont) {
     ];
     for (const p of candidates) {
       if (existsSync(p)) {
-        registerFont(p, { family: 'RobotoGL' });
+        GlobalFonts.registerFromPath(p, 'RobotoGL');
         break;
       }
     }
