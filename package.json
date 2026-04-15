@@ -1,0 +1,15 @@
+{
+  "name": "identicon-api",
+  "version": "1.0.0",
+  "description": "Vercel API backend for Universal Identicon Studio — 18 identicon styles",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@polkadot/ui-shared": "^3.6.0",
+    "jdenticon": "^3.3.0",
+    "identicon.js": "^2.3.3"
+  },
+  "devDependencies": {}
+}
