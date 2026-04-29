@@ -338,9 +338,18 @@ function polygon(cx, cy, r, sides, rotDeg) {
 function buildGradientAvatar(hash, size) {
   const bytes = hash.match(/.{2}/g).map(h => parseInt(h, 16));
   const h1=(bytes[0]*360/255).toFixed(1), h2=((bytes[0]*360/255+120+bytes[1]*60/255)%360).toFixed(1), h3=((bytes[0]*360/255+240+bytes[2]*60/255)%360).toFixed(1);
-  const s=(60+bytes[3]*30/255).toFixed(1), angle=((bytes[4]/255)*360).toFixed(1);
+  const s=(60+bytes[3]*30/255).toFixed(1);
+  const half = size / 2;
+  // Compute gradient line in user-space pixels to avoid gradientTransform + objectBoundingBox
+  // which Figma's SVG importer mishandles
+  const rad = (bytes[4] / 255) * 2 * Math.PI;
+  const gx1 = (half - Math.cos(rad) * half).toFixed(1);
+  const gy1 = (half - Math.sin(rad) * half).toFixed(1);
+  const gx2 = (half + Math.cos(rad) * half).toFixed(1);
+  const gy2 = (half + Math.sin(rad) * half).toFixed(1);
   const cx=(size*0.3+(bytes[5]/255)*size*0.4).toFixed(1), cy=(size*0.3+(bytes[6]/255)*size*0.4).toFixed(1);
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><defs><linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%" gradientTransform="rotate(${angle},0.5,0.5)"><stop offset="0%" stop-color="hsl(${h1},${s}%,55%)"/><stop offset="50%" stop-color="hsl(${h2},${s}%,50%)"/><stop offset="100%" stop-color="hsl(${h3},${s}%,45%)"/></linearGradient><radialGradient id="g2" cx="${cx}" cy="${cy}" r="60%" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="hsl(${h2},${s}%,75%)" stop-opacity="0.6"/><stop offset="100%" stop-color="hsl(${h1},${s}%,30%)" stop-opacity="0"/></radialGradient></defs><rect width="${size}" height="${size}" fill="url(#g1)"/><rect width="${size}" height="${size}" fill="url(#g2)"/></svg>`;
+  const r = (size * 0.6).toFixed(1);
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><defs><linearGradient id="g1" gradientUnits="userSpaceOnUse" x1="${gx1}" y1="${gy1}" x2="${gx2}" y2="${gy2}"><stop offset="0%" stop-color="hsl(${h1},${s}%,55%)"/><stop offset="50%" stop-color="hsl(${h2},${s}%,50%)"/><stop offset="100%" stop-color="hsl(${h3},${s}%,45%)"/></linearGradient><radialGradient id="g2" cx="${cx}" cy="${cy}" r="${r}" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="hsl(${h2},${s}%,75%)" stop-opacity="0.6"/><stop offset="100%" stop-color="hsl(${h1},${s}%,30%)" stop-opacity="0"/></radialGradient></defs><rect width="${size}" height="${size}" fill="url(#g1)"/><rect width="${size}" height="${size}" fill="url(#g2)"/></svg>`;
 }
 
 // ─── IdentiHeart ─────────────────────────────────────────────────────────────
