@@ -456,6 +456,17 @@ function ensureGradLetterFont(GlobalFonts) {
   GlobalFonts.register(Buffer.from(ROBOTO_BOLD_B64, 'base64'), 'RobotoGL');
 }
 
+const GRAD_LETTER_PRESETS = {
+  pastel:     { hueShift: 0,   saturation: -40, lightness: 20 },
+  neon:       { hueShift: 0,   saturation: 40,  lightness: 0 },
+  muted:      { hueShift: 0,   saturation: -30, lightness: 0 },
+  darkmode:   { hueShift: 0,   saturation: 0,   lightness: -30 },
+  monochrome: { hueShift: 0,   saturation: -100,lightness: 0 },
+  warm:       { hueShift: 0,   saturation: 0,   lightness: 0 },
+  cool:       { hueShift: 0,   saturation: 0,   lightness: 0 },
+  earth:      { hueShift: 0,   saturation: -20, lightness: 0 },
+};
+
 function buildGradLetterCanvas(seed, size, shape, bg, colors, createCanvas) {
   const hash  = createHash('sha256').update(seed).digest('hex');
   const bytes = hash.match(/.{2}/g).map(h => parseInt(h, 16));
@@ -465,9 +476,17 @@ function buildGradLetterCanvas(seed, size, shape, bg, colors, createCanvas) {
   let h2  = (h1 + 120 + bytes[1] * 60 / 255) % 360;
   let sat = 65 + bytes[3] * 25 / 255;
 
-  // Apply color remapping
-  if (colors.hueShift) { h1 = (h1 + colors.hueShift) % 360; h2 = (h2 + colors.hueShift) % 360; }
-  if (colors.saturation) sat = Math.max(0, Math.min(100, sat + colors.saturation));
+  // Resolve preset or manual sliders
+  const resolved = colors.preset ? (GRAD_LETTER_PRESETS[colors.preset.toLowerCase()] ?? {}) : colors;
+  const hueShift = resolved.hueShift ?? 0;
+  const satDelta = resolved.saturation ?? 0;
+  const litDelta = resolved.lightness ?? 0;
+
+  h1  = (h1 + hueShift + 360) % 360;
+  h2  = (h2 + hueShift + 360) % 360;
+  sat = Math.max(0, Math.min(100, sat + satDelta));
+  const l1 = Math.max(0, Math.min(100, 55 + litDelta));
+  const l2 = Math.max(0, Math.min(100, 45 + litDelta));
 
   const angle = bytes[4] * 360 / 255;
   const rad   = angle * Math.PI / 180;
@@ -493,8 +512,8 @@ function buildGradLetterCanvas(seed, size, shape, bg, colors, createCanvas) {
   const gx2 = half + Math.cos(rad) * half;
   const gy2 = half + Math.sin(rad) * half;
   const grad = ctx.createLinearGradient(gx1, gy1, gx2, gy2);
-  grad.addColorStop(0, `hsl(${h1.toFixed(1)},${sat.toFixed(1)}%,55%)`);
-  grad.addColorStop(1, `hsl(${h2.toFixed(1)},${sat.toFixed(1)}%,45%)`);
+  grad.addColorStop(0, `hsl(${h1.toFixed(1)},${sat.toFixed(1)}%,${l1}%)`);
+  grad.addColorStop(1, `hsl(${h2.toFixed(1)},${sat.toFixed(1)}%,${l2}%)`);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, size, size);
 
